@@ -197,7 +197,7 @@ class SqoopImportTask(OverwriteOutputMixin, SqoopImportMixin, luigi.contrib.hado
 
 class SqoopImportFromMysql(SqoopImportTask):
     """
-    An abstract task that uses Sqoop to read data out of a database and writes it to a file in CSV format.
+    An abstract task that uses Sqoop to read data out of a MySQL database and writes it to a file in CSV format.
 
     By default, the output format is defined by meaning of --mysql-delimiters option, which defines defaults used by
     mysqldump tool:
@@ -283,3 +283,81 @@ class SqoopImportRunner(luigi.contrib.hadoop.JobRunner):
             except Exception:
                 log.exception("Unable to dump metadata information.")
                 pass
+
+
+class SqoopImportFromVertica(SqoopImportTask):
+    """
+    An abstract task that uses Sqoop to read data out of a Vertica database and writes it to a file in CSV format.
+
+    * fields delimited by comma
+    * lines delimited by \n
+    * delimiters escaped by backslash
+    * fields optionally enclosed by single quotes (')
+    """
+
+    # Direct is not supported by the Vertica connector and so columns argument is now required.
+    direct = None
+    columns = luigi.ListParameter(
+        description='A list of column names to be included.',
+    )
+    schema_name = luigi.Parameter(
+        description='The schema that contains the table being exported.'
+    )
+    null_string = luigi.Parameter(
+        default=None,
+        description='String to use to represent NULL values in output data.',
+    )
+    fields_terminated_by = luigi.Parameter(
+        default=',',
+        description='Defines the file separator to use in output data.',
+    )
+    delimiter_replacement = luigi.Parameter(
+        default=' ',
+        description='Defines a character to use as replacement for delimiters '
+        'that appear within data values, for use with Hive.'
+    )
+
+    def connection_url(self, cred):
+        """Construct connection URL from provided credentials."""
+        return 'jdbc:vertica://{host}/{database}?searchpath={schema}'.format(host=cred['host'],
+                                                                             database=self.database,
+                                                                             schema=self.schema_name)
+
+    def import_args(self):
+        if self.columns is None or len(self.columns) == 0:
+            raise RuntimeError('Error Vertica\'s connector requires specific columns listed. No columns were supplied.')
+
+        arglist = [
+            '--target-dir', self.destination,
+            '--driver', 'com.vertica.jdbc.Driver',
+        ]
+
+        if len(self.columns) == 0:
+            raise RuntimeError('Error cannot complete export of {schema}.{table} because no columns were specified'
+                               ''.format(schema=self.schema_name, table=self.table_name))
+
+        # The vertica JBDC client doesn't handle reserved words in characters correctly.  We must build the query
+        column_list = ['"{}"'.format(b) for b in self.columns]
+        query = 'SELECT {cols} FROM {tbl} WHERE $CONDITIONS'.format(cols=','.join(column_list), tbl=self.table_name)
+
+        arglist.extend(['--query', query])
+
+        # Splitting is not successfully done by this version of sqoop or I was using it wrong.  For now do not add
+        # a --split-by field.
+        if self.num_mappers is not None:
+            arglist.extend(['--num-mappers', str(self.num_mappers)])
+        else:
+            arglist.extend(['--num-mappers', '1'])
+
+        if self.verbose:
+            arglist.append('--verbose')
+        if self.null_string is not None:
+            arglist.extend(['--null-string', self.null_string, '--null-non-string', self.null_string])
+        if self.fields_terminated_by is not None:
+            arglist.extend(['--fields-terminated-by', self.fields_terminated_by])
+        arglist.extend(['--optionally-enclosed-by', '\''])
+        if self.delimiter_replacement is not None:
+            arglist.extend(['--hive-delims-replacement', self.delimiter_replacement])
+        arglist.extend(['--lines-terminated-by', '\n'])
+
+        return arglist
