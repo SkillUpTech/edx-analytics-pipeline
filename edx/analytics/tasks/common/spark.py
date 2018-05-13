@@ -195,7 +195,55 @@ class EventLogSelectionMixinSpark(EventLogSelectionDownstreamMixin):
         return dataframe
 
 
-class SparkJobTask(OverwriteOutputMixin, PySparkTask):
+class SparkConfigurationMixin(object):
+    """Configuration parameters for spark task."""
+    driver_memory = luigi.Parameter(
+        config_path={'section': 'spark', 'name': 'driver-memory'},
+        description='Memory for spark driver',
+        significant=False,
+    )
+    driver_cores = luigi.Parameter(
+        config_path={'section': 'spark', 'name': 'driver-cores'},
+        description='Number of cores for driver',
+        significant=False,
+    )
+    executor_memory = luigi.Parameter(
+        config_path={'section': 'spark', 'name': 'executor-memory'},
+        description='Memory for each executor',
+        significant=False,
+    )
+    executor_cores = luigi.Parameter(
+        config_path={'section': 'spark', 'name': 'executor-cores'},
+        description='Number of cores for each executor',
+        significant=False,
+    )
+    num_executors = luigi.Parameter(
+        config_path={'section': 'spark', 'name': 'num-executors'},
+        description='Number of executors to launch',
+        significant=False,
+    )
+    master = luigi.Parameter(
+        config_path={'section': 'spark', 'name': 'master'},
+        description='Master url for spark job',
+        significant=False,
+    )
+    deploy_mode = luigi.Parameter(
+        config_path={'section': 'spark', 'name': 'deploy-mode'},
+        description='Deploy mode for driver program',
+        significant=False,
+    )
+    spark_config = luigi.Parameter(
+        config_path={'section': 'spark', 'name': 'conf'},
+        description='Spark configuration',
+        default=[]
+    )
+
+    @property
+    def conf(self):
+        return self._dict_config(self.spark_config)
+
+
+class SparkJobTask(SparkConfigurationMixin, OverwriteOutputMixin, PySparkTask):
     """
     Wrapper for spark task
     """
@@ -206,21 +254,6 @@ class SparkJobTask(OverwriteOutputMixin, PySparkTask):
     _hive_context = None
     _tmp_dir = None
 
-    driver_memory = luigi.Parameter(
-        config_path={'section': 'spark', 'name': 'driver-memory'},
-        description='Memory for spark driver',
-        significant=False,
-    )
-    executor_memory = luigi.Parameter(
-        config_path={'section': 'spark', 'name': 'executor-memory'},
-        description='Memory for each executor',
-        significant=False,
-    )
-    executor_cores = luigi.Parameter(
-        config_path={'section': 'spark', 'name': 'executor-cores'},
-        description='No. of cores for each executor',
-        significant=False,
-    )
     always_log_stderr = False  # log stderr if spark fails, True for verbose log
 
     def init_spark(self, sc):
