@@ -50,6 +50,8 @@ class EnterpriseEnrollmentRecord(Record):
     user_email = StringField(length=255, description='')
     user_username = StringField(length=255, description='')
     course_key = StringField(length=255, description='')
+    user_country_code = StringField(length=2, description='')
+    last_activity_date = DateTimeField(description='')
 
 
 class EnterpriseEnrollmentHiveTableTask(BareHiveTableTask):
@@ -127,10 +129,12 @@ class EnterpriseEnrollmentDataTask(
                     END AS course_duration_weeks,
                     course.min_effort AS course_min_effort,
                     course.max_effort AS course_max_effort,
+                    course.catalog_course AS course_key,
                     auth_user.date_joined AS user_account_creation_timestamp,
                     auth_user.email AS user_email,
-                    auth_user.username AS user_username,
-                    course.catalog_course AS course_key
+                    auth_user.username AS user_username
+                    user_profile.country AS user_country_code
+                    user_activity.latest_date AS last_activity_date,
             FROM enterprise_enterprisecourseenrollment enterprise_course_enrollment
             JOIN enterprise_enterprisecustomeruser enterprise_user
                     ON enterprise_course_enrollment.enterprise_customer_user_id = enterprise_user.id
@@ -141,6 +145,21 @@ class EnterpriseEnrollmentDataTask(
                     AND enterprise_user.user_id = enrollment.user_id
             JOIN auth_user auth_user
                     ON enterprise_user.user_id = auth_user.id
+            JOIN auth_userprofile user_profile
+                    ON enterprise_user.user_id = user_profile.id
+            LEFT JOIN (
+                    SELECT
+                        user_id,
+                        course_id,
+                        MAX(date) AS latest_date
+                    FROM
+                        user_activity_by_user
+                    GROUP BY
+                        user_id,
+                        course_id
+                ) user_activity
+                    ON enterprise_course_enrollment.course_id = user_activity.course_id
+                    AND enterprise_user.user_id = user_activity.user_id
             JOIN consent_datasharingconsent consent
                     ON auth_user.username =  consent.username
                     AND enterprise_course_enrollment.course_id = consent.course_id
