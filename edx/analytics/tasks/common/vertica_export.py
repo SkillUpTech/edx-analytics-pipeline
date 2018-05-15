@@ -89,8 +89,8 @@ VERTICA_TO_BIGQUERY_FIELD_MAPPING = {
     'numeric': 'float64',
     'float': 'float64',
     'date': 'date',
-    'time': 'string',
-    'timetz': 'string',
+    'time': 'time',
+    'timetz': 'time',
     'timestamptz': 'datetime',
     'timestamp': 'datetime'
 }
@@ -111,7 +111,7 @@ def get_vertica_table_schema(credentials, schema_name, table_name):
         nullable = row[2]
         field_type = row[1]
         if '(' in field_type:
-            field_type = field_type[:field_type.find('(')]
+            field_type = field_type.rsplit('(')[0]
 
         if field_type.lower() in ['long varbinary']:
             log.error('Error Vertica jdbc tool is unable to export field type \'%s\'.  This field will be '
@@ -141,6 +141,19 @@ class VerticaTableToS3Task(OverwriteOutputMixin, luigi.Task):
         default={},
         description='A dictionary specifying the Vertica-centric configuration.'
     )
+    sqoop_null_string = luigi.Parameter(
+        default='null',
+        description='A string replacement value for any (null) values encountered by Sqoop when exporting from Vertica.'
+    )
+    sqoop_fields_terminated_by = luigi.Parameter(
+        default=',',
+        description='The field delimiter used by Sqoop.'
+    )
+    sqoop_delimiter_replacement = luigi.Parameter(
+        default=' ',
+        description='The string replacement value for special characters encountered by Sqoop when exporting from '
+                    'Vertica.'
+    )
 
     def __init__(self, *args, **kwargs):
         super(VerticaTableToS3Task, self).__init__(*args, **kwargs)
@@ -167,25 +180,22 @@ class VerticaTableToS3Task(OverwriteOutputMixin, luigi.Task):
                                                          self.vertica_configuration['table_name'])
         return self.table_schema
 
-    def output(self):
+    def s3_output_path(self):
         partition_path_spec = HivePartition('dt', self.date).path_spec
         target_url = url_path_join(self.s3_configuration['warehouse_path'],
                                    self.vertica_configuration['warehouse_name'],
                                    self.vertica_configuration['schema_name'],
                                    self.vertica_configuration['table_name'],
                                    partition_path_spec) + '/'
-        return get_target_from_url(target_url)
+        return target_url
+
+    def output(self):
+        return get_target_from_url(self.s3_output_path())
 
     @property
     def insert_source_task(self):
         """The sqoop command that manages the data transfer from the source datasource."""
-
-        partition_path_spec = HivePartition('dt', self.date).path_spec
-        target_url = url_path_join(self.s3_configuration['warehouse_path'],
-                                   self.vertica_configuration['warehouse_name'],
-                                   self.vertica_configuration['schema_name'],
-                                   self.vertica_configuration['table_name'],
-                                   partition_path_spec) + '/'
+        target_url = self.s3_output_path()
         column_list = [row[0] for row in self.get_table_schema()]
 
         if len(column_list) <= 0:
@@ -201,9 +211,9 @@ class VerticaTableToS3Task(OverwriteOutputMixin, luigi.Task):
             columns=column_list,
             destination=target_url,
             overwrite=self.overwrite,
-            null_string='NNULLL',
-            fields_terminated_by='\x01',
-            delimiter_replacement=' ',
+            null_string=self.sqoop_null_string,
+            fields_terminated_by=self.sqoop_fields_terminated_by,
+            delimiter_replacement=self.sqoop_delimiter_replacement,
         )
 
 
@@ -227,8 +237,25 @@ class LoadVerticaTableToBigQuery(BigQueryLoadTask):
         description='A dictionary specifying the BigQuery-centric configuration.'
     )
 
+    # I need to specify defaults for these two parameters because the luigi interpreter is validating the field before
+    # the __init__ call below
+    dataset_id = luigi.Parameter(
+        default=None
+    )
+    credentials = luigi.Parameter(
+        default=None
+    )
+
     def __init__(self, *args, **kwargs):
         super(LoadVerticaTableToBigQuery, self).__init__(*args, **kwargs)
+        # Because of the way Luigi handles parameters the next three dictionary objects are not populated until after
+        # the super call.  This means we are changing 3 internal variables after a function call to the parent class.
+        # If these 3 parameters are ever used in the BigQueryLoadTask __init__ call we will have to replicate the logic
+        # here.
+        self.dataset_id = self.bigquery_configuration['dataset_id']
+        self.credentials = self.bigquery_configuration['credentials']
+        self.max_bad_records = self.bigquery_configuration['max_bad_records']
+
         self.vertica_source_table_schema = None
         self.bigquery_compliant_schema = None
 
@@ -264,6 +291,10 @@ class LoadVerticaTableToBigQuery(BigQueryLoadTask):
         return 'NNULLL'
 
     @property
+    def delimiter_replacement(self):
+        return ' '
+
+    @property
     def schema(self):
         """The BigQuery compliant schema."""
         if self.bigquery_compliant_schema is None:
@@ -292,6 +323,9 @@ class LoadVerticaTableToBigQuery(BigQueryLoadTask):
             s3_configuration=self.s3_configuration,
             date=self.date,
             overwrite=self.overwrite,
+            sqoop_null_string=self.null_marker,
+            sqoop_fields_terminated_by=self.field_delimiter,
+            sqoop_delimiter_replacement=self.delimiter_replacement,
         )
 
 
@@ -313,7 +347,7 @@ class VerticaSchemaToBigQueryTask(luigi.WrapperTask):
         description='Current run date.  This parameter is used to isolate intermediate datasets.'
     )
     exclude = luigi.ListParameter(
-        default=[], description='The Vertica tables that are exclude from exporting.'
+        default=[], description='The Vertica tables that are to be excluded from exporting.'
     )
     vertica_warehouse_name = luigi.Parameter(
         default='warehouse', description='The Vertica warehouse that houses the schema being copied.'
@@ -380,7 +414,7 @@ class VerticaSchemaToBigQueryTask(luigi.WrapperTask):
             'credentials': self.vertica_credentials,
         }
 
-        query = "select table_name from all_tables where schema_name='{schema_name}' and table_type='TABLE' " \
+        query = "SELECT table_name FROM all_tables WHERE schema_name='{schema_name}' AND table_type='TABLE' " \
                 "".format(schema_name=vertica_configuration['schema_name'])
         table_list = [row[0] for row in get_vertica_results(vertica_configuration['credentials'], query)]
 
@@ -390,9 +424,6 @@ class VerticaSchemaToBigQueryTask(luigi.WrapperTask):
                 bigquery_configuration['table_name'] = table_name
 
                 yield LoadVerticaTableToBigQuery(
-                    dataset_id=bigquery_configuration['dataset_id'],
-                    credentials=bigquery_configuration['credentials'],
-                    max_bad_records=bigquery_configuration['max_bad_records'],
                     date=self.date,
                     overwrite=self.overwrite,
                     gcp_configuration=gcp_configuration,

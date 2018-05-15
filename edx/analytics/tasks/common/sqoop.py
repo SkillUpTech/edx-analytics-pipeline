@@ -92,7 +92,7 @@ class SqoopImportTask(OverwriteOutputMixin, SqoopImportMixin, luigi.contrib.hado
     )
     fields_terminated_by = luigi.Parameter(
         default=None,
-        description='Defines the file separator to use on output.',
+        description='Defines the field separator to use on output.',
     )
     delimiter_replacement = luigi.Parameter(
         default=None,
@@ -295,7 +295,7 @@ class SqoopImportFromVertica(SqoopImportTask):
     * fields optionally enclosed by single quotes (')
     """
 
-    # Direct is not supported by the Vertica connector and so columns argument is now required.
+    # Direct is not supported by the Vertica JDBC connector
     direct = None
     columns = luigi.ListParameter(
         description='A list of column names to be included.',
@@ -307,21 +307,19 @@ class SqoopImportFromVertica(SqoopImportTask):
         default=None,
         description='String to use to represent NULL values in output data.',
     )
-    fields_terminated_by = luigi.Parameter(
-        default=',',
-        description='Defines the file separator to use in output data.',
-    )
     delimiter_replacement = luigi.Parameter(
-        default=' ',
+        default=None,
         description='Defines a character to use as replacement for delimiters '
         'that appear within data values, for use with Hive.'
     )
 
     def connection_url(self, cred):
         """Construct connection URL from provided credentials."""
-        return 'jdbc:vertica://{host}/{database}?searchpath={schema}'.format(host=cred['host'],
-                                                                             database=self.database,
-                                                                             schema=self.schema_name)
+        return 'jdbc:vertica://{host}/{database}?searchpath={schema}'.format(
+            host=cred['host'],
+            database=self.database,
+            schema=self.schema_name
+        )
 
     def import_args(self):
         if self.columns is None or len(self.columns) == 0:
@@ -336,7 +334,7 @@ class SqoopImportFromVertica(SqoopImportTask):
             raise RuntimeError('Error cannot complete export of {schema}.{table} because no columns were specified'
                                ''.format(schema=self.schema_name, table=self.table_name))
 
-        # The vertica JBDC client doesn't handle reserved words in characters correctly.  We must build the query
+        # The vertica JBDC client doesn't handle reserved words in columns correctly.  We must build the query
         column_list = ['"{}"'.format(b) for b in self.columns]
         query = 'SELECT {cols} FROM {tbl} WHERE $CONDITIONS'.format(cols=','.join(column_list), tbl=self.table_name)
 

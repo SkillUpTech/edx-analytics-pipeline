@@ -57,19 +57,20 @@ class SqoopImportTestCase(unittest.TestCase):
         else:
             column_list = list(columns)
 
-        kw_args = {"credentials": sentinel.ignored,
-                   "schema_name": schema_name,
-                   "database": 'exampledata',
-                   "destination": "/fake/destination",
-                   "table_name": table_name,
-                   "num_mappers": num_mappers,
-                   "where": where,
-                   "columns": column_list,
-                   "null_string": null_string,
-                   "fields_terminated_by": fields_terminated_by,
-                   "delimiter_replacement": delimiter_replacement,
-                   "overwrite": overwrite,
-                   }
+        kw_args = {
+            "credentials": sentinel.ignored,
+            "schema_name": schema_name,
+            "database": 'exampledata',
+            "destination": "/fake/destination",
+            "table_name": table_name,
+            "num_mappers": num_mappers,
+            "where": where,
+            "columns": column_list,
+            "null_string": null_string,
+            "fields_terminated_by": fields_terminated_by,
+            "delimiter_replacement": delimiter_replacement,
+            "overwrite": overwrite,
+        }
         # remove options marked as None
         trimmed_kws = {k: v for k, v in kw_args.iteritems() if v is not None}
         task = SqoopImportFromVertica(**trimmed_kws)
@@ -252,6 +253,8 @@ class SqoopImportTestCase(unittest.TestCase):
     def test_success_vertica_with_complete_credentials(self):
         self.create_and_run_vertica_task(table_name='example_table',
                                          schema_name='fake_schema',
+                                         delimiter_replacement=' ',
+                                         fields_terminated_by=',',
                                          columns=['field1', 'field2', 'field3'])
         arglist = self.get_call_args_after_run()
         self.assertTrue(self.mock_run.called)
