@@ -360,6 +360,7 @@ class VerticaSchemaToBigQueryTask(luigi.WrapperTask):
         description='Path to the external Vertica access credentials file.',
     )
     bigquery_dataset = luigi.Parameter(
+        default=None,
         description='The target dataset that will hold the Vertica schema.'
     )
     max_bad_records = luigi.IntParameter(
@@ -368,10 +369,6 @@ class VerticaSchemaToBigQueryTask(luigi.WrapperTask):
     gcp_credentials = luigi.Parameter(
         config_path={'section': 'gcp-import', 'name': 'credentials'},
         description='Path to the external GCP/BigQuery access credentials file.',
-    )
-    gcp_warehouse_path = luigi.Parameter(
-        config_path={'section': 'gcp-import', 'name': 'warehouse_path'},
-        description='The warehouse path to store intermediate data on GCP.'
     )
     s3_warehouse_path = luigi.Parameter(
         config_path={'section': 'vertica-export-sqoop', 'name': 'warehouse_path'},
@@ -400,7 +397,6 @@ class VerticaSchemaToBigQueryTask(luigi.WrapperTask):
         gcp_configuration = {
             'overwrite': self.overwrite,
             'credentials': self.gcp_credentials,
-            'warehouse_path': self.gcp_warehouse_path,
         }
         s3_configuration = {
             'overwrite': self.overwrite,
