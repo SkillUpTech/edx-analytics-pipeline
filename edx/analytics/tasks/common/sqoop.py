@@ -291,26 +291,12 @@ class SqoopImportFromVertica(SqoopImportTask):
 
     * fields delimited by comma
     * lines delimited by \n
-    * delimiters escaped by backslash
-    * fields optionally enclosed by single quotes (')
     """
 
     # Direct is not supported by the Vertica JDBC connector
     direct = None
-    columns = luigi.ListParameter(
-        description='A list of column names to be included.',
-    )
     schema_name = luigi.Parameter(
         description='The schema that contains the table being exported.'
-    )
-    null_string = luigi.Parameter(
-        default=None,
-        description='String to use to represent NULL values in output data.',
-    )
-    delimiter_replacement = luigi.Parameter(
-        default=None,
-        description='Defines a character to use as replacement for delimiters '
-        'that appear within data values, for use with Hive.'
     )
 
     def connection_url(self, cred):
@@ -329,10 +315,6 @@ class SqoopImportFromVertica(SqoopImportTask):
             '--target-dir', self.destination,
             '--driver', 'com.vertica.jdbc.Driver',
         ]
-
-        if len(self.columns) == 0:
-            raise RuntimeError('Error cannot complete export of {schema}.{table} because no columns were specified'
-                               ''.format(schema=self.schema_name, table=self.table_name))
 
         # The vertica JBDC client doesn't handle reserved words in columns correctly.  We must build the query
         column_list = ['"{}"'.format(b) for b in self.columns]
@@ -353,6 +335,7 @@ class SqoopImportFromVertica(SqoopImportTask):
             arglist.extend(['--null-string', self.null_string, '--null-non-string', self.null_string])
         if self.fields_terminated_by is not None:
             arglist.extend(['--fields-terminated-by', self.fields_terminated_by])
+        #
         arglist.extend(['--optionally-enclosed-by', '\''])
         if self.delimiter_replacement is not None:
             arglist.extend(['--hive-delims-replacement', self.delimiter_replacement])

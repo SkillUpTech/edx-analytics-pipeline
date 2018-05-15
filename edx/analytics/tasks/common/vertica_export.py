@@ -274,7 +274,7 @@ class LoadVerticaTableToBigQuery(BigQueryLoadTask):
 
     @property
     def table_description(self):
-        return "Copy of '{}' table from Vertica on {}.{}".format(self.vertica_configuration['table_name'],
+        return "Copy of '{}' table from Vertica {}.{}".format(self.vertica_configuration['table_name'],
                                                                  self.vertica_configuration['schema_name'],
                                                                  self.vertica_configuration['table_name'])
 
@@ -313,7 +313,6 @@ class LoadVerticaTableToBigQuery(BigQueryLoadTask):
                                           'type': VERTICA_TO_BIGQUERY_FIELD_MAPPING[vertica_field_type],
                                           'mode': 'NULLABLE' if nullable else 'REQUIRED'})
             self.bigquery_compliant_schema = res
-            log.info(json.dumps(tmp_schema_output))
         return self.bigquery_compliant_schema
 
     @property
