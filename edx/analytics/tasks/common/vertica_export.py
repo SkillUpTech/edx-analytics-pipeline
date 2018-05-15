@@ -389,7 +389,7 @@ class VerticaSchemaToBigQueryTask(luigi.WrapperTask):
         yield ExternalURL(url=self.gcp_credentials)
 
         bigquery_configuration = {
-            'dataset_id': self.vertica_schema if self.bigquery_dataset is None else self.bigquery_dataset,
+            'dataset_id': self.vertica_schema_name if self.bigquery_dataset is None else self.bigquery_dataset,
             'overwrite': self.overwrite,
             'credentials': self.gcp_credentials,
             'max_bad_records': self.max_bad_records,
